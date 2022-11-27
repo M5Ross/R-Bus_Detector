@@ -1,0 +1,192 @@
+The sci functions and macros to implement asynchronous
+communication on the Serial Communication Interface (SCI)
+module.
+
+CONTENTS
+########
+
+1 Setting Up
+2 Asynchronous Function Definitions
+3 Examples
+4 Using Interrupts
+
+
+1) Setting Up
+#############
+
+The file sci.h should be #included into your source
+files. This file contains a macro which specifies
+the Fosc frequency. This affects the baud rate
+calculations and should be adjusted to suit your
+application.
+
+
+2) Asynchronous Function and Macro Definitions
+##############################################
+
+unsigned char
+sci_Init(unsigned long int baud, unsigned char ninebits)
+~~~~~~~~
+
+This function is used to set up the appropriate registers
+associated with the sci module. Specify the desired
+baud rate. If this is possible using the current
+value of Fosc, the value specified will be used - see
+the PIC manual for details on baud rate selection.
+If ninebits is true, 9-bit data values will be used for
+both transmission and reception. The function returns
+true if the desired baud rate could not be achieved;
+false otherwise.
+
+SCI_EIGHT and SCI_NINE
+~~~~~~~~~     ~~~~~~~~~
+
+These macros can beused with sci_Init() to indicate
+eight- and nine-bit communication, respectively.
+
+void
+sci_PutByte(unsigned char byte)
+~~~~~~~~~~~
+
+This function is used to send an 8-bit quantity to
+the SCI. The function first waits until TXIF is
+set then loads the transmit register.
+
+sci_PutNinth(bitnine)
+~~~~~~~~~~~~
+
+This macro is used to send the ninth bit to
+the SCI when in nine-bit data mode. It should be
+called before calling sci_PutByte().
+
+unsigned char
+sci_GetByte(void)
+~~~~~~~~~~~
+
+This function waits until the receive register is not
+empty and returns the received 8-bit data.
+
+unsigned char
+sci_GetNinth(void)
+~~~~~~~~~~~~
+
+This function waits until the receive register is not
+empty and returns the received ninth-bit when in nine-
+bit mode. It should be called before calling
+sci_GetByte()as the ninth bit is lost after calling
+this function.
+
+unsigned char
+sci_GetFERR(void)
+~~~~~~~~~~~
+
+This function waits until the receive register is not
+empty and returns the received frame error status bit.
+It should be called before calling sci_GetByte() as
+frame error information is lost after calling this
+function.
+
+unsigned char
+sci_CheckOERR(void)
+~~~~~~~~~~~~~
+
+This function checks for an overrun error and resets the
+receiver, by toggling the CREN bit, and returns true if
+this has occured. The function returns false if no error
+occured. If an overrun error occurs, the receiver is
+completely disabled.
+
+
+3) Examples
+###########
+
+// 8-bit mode at 9600 baud using polling
+
+sci_Init(9600,SCI_EIGHT);
+sci_PutByte(0xaa);	/* send 0xaa when device is ready */
+data = sci_GetByte();	/* read data when device is ready */
+
+// 9-bit mode at 19200 baud using polling
+
+sci_Init(19200,SCI_NINE);
+sci_PutNinth(0x00);	/* ninth bit is zero */
+sci_PutByte(0xff);	/* and data is 0xff */
+
+if(sci_getNinth())
+	; /* bit nine was true */
+data = sci_GetByte();	/* get 8-bit value */
+if(sci_CheckOERR())
+	; /* an overrun error occured */
+
+
+4) Using Interrupts
+###################
+
+To use interrupts with the SCI, there are several things
+which must be attended to.
+
+Firstly there must be an interrupt service routine which
+can process the interrupts when they occur. There can be
+only one interrupt routine associated with the PIC
+processor and so this routine must be able to service
+any interrupt which occurs, not just those associated
+with the SCI. The following example shows an ISR which
+handles reception and transmission. The RCIF, TXIF,
+RCIE and TXIE bits can be used to ascertain what caused
+the interrupt. In the example, if the receive register
+is full (RCIF), a character is read from the SCI and
+echoed back to the source. If the transmitter is
+empty and the transmitter interrupts are enabled then
+another byte from a message is transmitted. If all
+the message has been sent, the interrupts are disabled
+to prevent further transmission. If any other interrupts
+are enabled, the code to handle these will also have to
+appear in this ISR.
+
+unsigned char byte, i;
+
+void interrupt isr(void)
+{
+	if(RCIF)
+	{
+		byte = sci_GetByte();
+		sci_PutByte(byte);	/* echo char */
+	}
+	if(TXIF && TXIE)
+	{
+		sci_PutByte(message[i]);
+		if(message[++i] == '\0')
+			TXIE = 0;	/* finished */
+	}
+}
+
+The interrupts can be enabled by setting the appropriate
+bits in the INTCON register. To use the SCI, enable the
+PEIE bit. If other interrupts are to be used, set the
+bits corresponding to these interrupts in this register.
+The global interrupt enable bit must also be set. The
+TXIE and RCIE bits can then be used to mask and unmask
+the interrupts at various points in your code.
+
+sci_Init(9600, SCI_EIGHT);
+
+PIR1 = 0;	/* clear any pending interrupts */
+PEIE = 1;	/* enable perhipheral interrupts */
+GIE  = 1;	/* global interrupts enabled */
+
+/* perform other setup */
+
+RCIE = 1;	/* unmask receiver interrupts... */
+
+/* an interrupt could now come from the SCI receiver
+at any time. */
+
+/* process data read in, if any */
+
+RCIE = 0;	/* mask receive interrupts */
+
+/* no more interrupts can come from the receiver */
+
+See the PIC appropriate manual for further details
+on the use of PIC interrupts.
+
